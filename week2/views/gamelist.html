@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mongoose Lab Example</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id = "container">
+        <h1>Game List</h1>
+        <nav>
+            <a href="index.html">Game Entry</a>
+            <a href="#">Game List</a>
+        </nav>
+        <script>
+            fetch('/getData').then(function(games){//fetch Request
+                games.json().then(function(thegames){
+                        console.log(thegames);//will read what is in database
+                        for(let game of thegames.game){//constant
+                            var gameElement = document.createElement('p')//html tags are elements
+                            gameElement.innerHTML = game.game;//game.game is entry in for loop
+                            document.getElementById('container').appendChild(gameElement)//add child (game element) to document
+                        
+                            //add a delete button (not required)
+                            var deleteBtn = document.createElement('button');
+                            deleteBtn.innerText = 'Delete';
+                            deleteBtn.addEventListener('click', function deleteGame(){//event listener for delete button
+                                location.reload();//reload page to showcase deleted data
+                                fetch('/deleteGame',{//fetch request {what particular item}
+                                    method:"POST",
+                                    headers:{
+                                        "Content-Type":"application/json"
+                                    },
+                                    body:JSON.stringify({//send data to body to delete entry
+                                        _id:game._id
+                                    })
+                                });
+                            })
+                            
+                            gameElement.appendChild(deleteBtn);
+                        }
+                })
+            });
+        </script>
+    </div>
+</body>
+</html>
