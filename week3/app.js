@@ -17,53 +17,76 @@ serv.listen(3000, function(){
 })//listen to port 3000
 
 var SocketList = {};
-var PlayerList = {};
 
-var Player = function(id){//class, similar to constructor
-    var self = {//induvidual instance, holds params
+//Class for GameObject
+var GameObject = function(){
+    var self = {
         x:400,
         y:300,
-        id:id,
-        number:Math.floor(Math.random()*10),
-        right:false,
-        left:false,
-        up:false,
-        down:false,
-        speed:10
+        spX:0,
+        spY:0,
+        id:""
+    };
+    
+    self.update = function(){
+        self.updatePosition()
     }
+
     self.updatePosition = function(){
-        //console.log(self.up)
-        if (self.right)
-            self.x += self.speed;
-        if (self.left)
-            self.x -= self.speed;
-        if (self.up)
-            self.y -= self.speed;
-        if (self.down)
-            self.y += self.speed;
+        self.x += self.spX;
+        self.y += self.spY;
     }
     return self;
 }
 
-io.sockets.on('connection', function(socket){//when connected to socket.io, is opened when someone on client connects to server
-    console.log("Socket Connected");
+//add to game object class with new class
+var Player = function(id){//class, similar to constructor
+    
+    var self = GameObject()
+    self.id = id;
+    self.number = Math.floor(Math.random()*10);
+    self.right = false;
+    self.left = false;
+    self.up = false;
+    self.down = false
+    self.speed = 10;
+    
+    var playerUpdate = self.update;//inherited from base class
 
-    socket.id = Math.random();//random id, unlikely to be the same
-    //socket.x = 0;
-    //socket.y = Math.floor(Math.random()*600)//random number * canvas height
-    //socket.number = Math.floor(Math.random()*10)//random number * canvas height
-    //add something to socket list
-    SocketList[socket.id] = socket;
+    self.update = function(){
+        self.updateSpeed();
+        playerUpdate();
+    }
 
+    self.updateSpeed = function(){
+        if(self.right){
+            self.spX = self.speed;
+        }else if(self.left){
+            self.spX = -self.speed
+        }else{//prevent acceleration endlessly
+            self.spX = 0;
+        }
+
+        if(self.up){
+            self.spY = -self.speed;
+        }else if(self.down){
+            self.spY = self.speed;
+        }else{//prevent acceleration endlessly
+            self.spY = 0;
+        }
+    }
+
+    Player.list[id] = self;
+
+    return self;
+}
+
+Player.list = {}//= empty json
+
+//list of functions for player connection and movement
+Player.onConnect = function(socket){
     var player = new Player(socket.id);//instance of player, utlize new x,y
-    PlayerList[socket.id] = player;
-
-    //disconnection event
-    socket.on('disconnect', function(){
-        delete SocketList[socket.id];
-        delete PlayerList[socket.id];
-    });//disconnection
-
+    
     //recieves player input
     socket.on('keypress', function(data){
         console.log(data.state)
@@ -76,6 +99,45 @@ io.sockets.on('connection', function(socket){//when connected to socket.io, is o
         if(data.inputId === 'right')
             player.right = data.state;
     });
+}
+
+Player.onDisconnect = function(socket){
+    delete Player.list[socket.id];
+}
+
+Player.update = function(){
+    var pack = [];//collection of each package
+    for (var i in Player.list){
+        var player = Player.list[i];
+        player.update();
+        //console.log(player)
+        pack.push({
+            x: player.x,
+            y: player.y,
+            number: player.number
+        })
+    }
+
+    return pack;
+}
+
+//Connection to game
+io.sockets.on('connection', function(socket){//when connected to socket.io, is opened when someone on client connects to server
+    console.log("Socket Connected");
+
+    socket.id = Math.random();//random id, unlikely to be the same
+    //socket.x = 0;
+    //socket.y = Math.floor(Math.random()*600)//random number * canvas height
+    //socket.number = Math.floor(Math.random()*10)//random number * canvas height
+    //add something to socket list
+    SocketList[socket.id] = socket;
+    Player.onConnect(socket);
+
+    //disconnection event
+    socket.on('disconnect', function(){
+        delete SocketList[socket.id];
+        Player.onDisconnect(socket);
+    });//disconnection
 
     //old example from wendsday 1/27
     // socket.on('sendMsg', function(data){//on this event happening
@@ -92,17 +154,7 @@ io.sockets.on('connection', function(socket){//when connected to socket.io, is o
 
 //setup update loop
 setInterval(function(){
-    var pack = [];//collection of each package
-    for (var i in PlayerList){
-        var player = PlayerList[i];
-        player.updatePosition();
-        //console.log(player)
-        pack.push({
-            x: player.x,
-            y: player.y,
-            number: player.number
-        })
-    }
+    var pack = Player.update();
     for (var i in SocketList){
         var socket = SocketList[i];//new local refernce to update previous versions
         socket.emit('newPositions', pack);

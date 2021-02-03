@@ -30,9 +30,11 @@ function keyPressUp(e) {//recieve event from event handler
 }
 
 socket.on('newPositions', function (data) {
+    
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (var i = 0; i < data.length; i++) {//data = new package we are sending
         ctx.fillText(data[i].number, data[i].x, data[i].y);
+        //console.log(data[i].number, data[i].x, data[i].y)
     }
 })
 
