@@ -2,6 +2,7 @@ var express = require('express');
 var app = express();
 var serv = require('http').Server(app);//refer to server when refering to certain connections
 var io = require('socket.io')(serv,{});
+var debug = true;//do not leave true when building on heroku, allows code injection
 
 //File communication
 app.get('/', function(req,res){
@@ -36,6 +37,9 @@ var GameObject = function(){
         self.x += self.spX;
         self.y += self.spY;
     }
+    self.getDist = function(point){
+        return Math.sqrt(Math.pow(self.x - point.x, 2) + Math.pow(self.y - point.y, 2));//distance formula
+    }
     return self;
 }
 
@@ -48,7 +52,9 @@ var Player = function(id){//class, similar to constructor
     self.right = false;
     self.left = false;
     self.up = false;
-    self.down = false
+    self.down = false;
+    self.attack = false;
+    self.mouseAngle = 0;
     self.speed = 10;
     
     var playerUpdate = self.update;//inherited from base class
@@ -56,6 +62,18 @@ var Player = function(id){//class, similar to constructor
     self.update = function(){
         self.updateSpeed();
         playerUpdate();
+        // if(Math.random()<0.1){//at random
+        //     self.shoot(Math.random()*360);
+        // }
+        if(self.attack){
+            self.shoot(self.mouseAngle);
+        }
+    }
+
+    self.shoot = function(angle){
+        var b =new Bullet(self.id, angle);
+        b.x = self.x;
+        b.y = self.y;
     }
 
     self.updateSpeed = function(){
@@ -89,7 +107,7 @@ Player.onConnect = function(socket){
     
     //recieves player input
     socket.on('keypress', function(data){
-        console.log(data.state)
+        //console.log(data.state)
         if(data.inputId === 'up')
             player.up = data.state;
         if(data.inputId === 'down')
@@ -98,6 +116,10 @@ Player.onConnect = function(socket){
             player.left = data.state;
         if(data.inputId === 'right')
             player.right = data.state;
+        if(data.inputId === 'attack')
+            player.attack = data.state;
+        if(data.inputId === 'mouseAngle')
+            player.mouseAngle = data.state;
     });
 }
 
@@ -121,6 +143,63 @@ Player.update = function(){
     return pack;
 }
 
+var Bullet = function(parent, angle){
+    var self = GameObject();//inherit from gameobject class
+    self.id = Math.random();
+    self.spX = Math.cos(angle/180*Math.PI) * 10;//convert from degrees to radians
+    self.spY = Math.sin(angle/180*Math.PI) * 10;//convert from degrees to radians
+    self.parent = parent;
+
+
+    self.timer = 0;
+    self.toRemove = false;
+
+    var bulletUpdate = self.update;
+    self.update = function(){
+        if(self.timer++ > 100){//remove bullets from screen
+            self.toRemove = true;
+        }
+
+        bulletUpdate();
+        for(var i in Player.list){
+            var p = Player.list[i];
+            if(self.getDist(p)<25 && self.parent !== p.id){//25 distance range is hardcoded, prevent collision w/ self
+                self.toRemove = true;
+                //damage/hp 
+            }
+        }
+    }
+    Bullet.list[self.id] = self;
+    return self;
+}
+
+Bullet.list = {};//set up bullet list
+
+Bullet.update = function(){
+    //creates bullets
+    // if(Math.random()<0.1){//at random
+    //     Bullet(Math.random()*360);
+    // }
+
+    var pack = [];//collection of each package
+
+    for (var i in Bullet.list){
+        var bullet = Bullet.list[i];
+        bullet.update();
+        if(bullet.toRemove){
+            delete Bullet.list[i];
+        }
+        else{
+            pack.push({
+                x: bullet.x,
+                y: bullet.y,
+            })
+        }        
+    }
+
+    return pack;
+}
+
 //Connection to game
 io.sockets.on('connection', function(socket){//when connected to socket.io, is opened when someone on client connects to server
     console.log("Socket Connected");
@@ -134,10 +213,25 @@ io.sockets.on('connection', function(socket){//when connected to socket.io, is o
     Player.onConnect(socket);
 
     //disconnection event
-    socket.on('disconnect', function(){
+    socket.on('disconnect', function(){//disconnection
         delete SocketList[socket.id];
         Player.onDisconnect(socket);
-    });//disconnection
+    });
+
+    socket.on('sendMessageToServer', function(data){//handling chat event
+        var playerName = (" " + socket.id).slice(2,7);//slice(what index is changing, the start, the end)
+        for(var i in SocketList){
+            SocketList[i].emit('addToChat', playerName + ": " + data)//data is the message
+        }
+    });
+
+    socket.on('evalServer', function(data){
+        if(!debug){
+            return
+        }
+        var res = eval(data);//evaluate()
+        socket.emit('evalResponse', res)
+    });
 
     //old example from wendsday 1/27
     // socket.on('sendMsg', function(data){//on this event happening
@@ -154,9 +248,12 @@ io.sockets.on('connection', function(socket){//when connected to socket.io, is o
 
 //setup update loop
 setInterval(function(){
-    var pack = Player.update();
+    var pack = {
+        player:Player.update(),
+        bullet:Bullet.update()
+    };
     for (var i in SocketList){
         var socket = SocketList[i];//new local refernce to update previous versions
         socket.emit('newPositions', pack);
-    }
+    };
 }, 1000/30);//code to be executed when run, time in ms
