@@ -4,7 +4,15 @@ var ctx = canvas.getContext('2d');
 var chatText = document.getElementById('chat-text')
 var chatInput = document.getElementById('chat-input')
 var chatForm = document.getElementById('chat-form')
+var px= 0;
+var py = 0;
+var clientId;
 ctx.font = '30px Arial';
+
+socket.on('connected', function(data){
+    clientId = data;
+    console.log(clientId);
+})
 
 //event listeners for controls
 document.addEventListener('keydown', keyPressDown)//keydown
@@ -43,18 +51,21 @@ function mouseUp(e) {//recieve event from event handler
 }
 
 function mouseMove(e) {//recieve event from event handler
-    var x = -400/2 + e.clientX;//starting point + event
-    var y = -300/2 + e.clientY;//starting point + event
+    var x = -px + e.clientX - 8;//starting point + header dimention
+    var y = -py + e.clientY - 98;//starting point + header dimention
     var angle = Math.atan2(y,x)/Math.PI*180;//get angle
     socket.emit('keypress', { inputId: 'mouseAngle', state: angle })
 }
 
 socket.on('newPositions', function (data) {
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
     //data = new package we are sending
     //loop through objects within data
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (var i = 0; i < data.player.length; i++) {
+        if(clientId == data.player[i].id){
+            px = data.player[i].x;
+            py = data.player[i].y;
+        }
         ctx.fillText(data.player[i].number, data.player[i].x, data.player[i].y);
     }
     for (var i = 0; i < data.bullet.length; i++) {

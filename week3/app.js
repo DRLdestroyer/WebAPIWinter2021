@@ -136,7 +136,8 @@ Player.update = function(){
         pack.push({
             x: player.x,
             y: player.y,
-            number: player.number
+            number: player.number,
+            id:player.id
         })
     }
 
@@ -211,6 +212,8 @@ io.sockets.on('connection', function(socket){//when connected to socket.io, is o
     //add something to socket list
     SocketList[socket.id] = socket;
     Player.onConnect(socket);
+    //send the id to the client
+    socket.emit('connected', socket.id);
 
     //disconnection event
     socket.on('disconnect', function(){//disconnection
