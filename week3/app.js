@@ -2,6 +2,7 @@ var express = require('express');
 const { Mongoose } = require('mongoose');
 var app = express();
 var mongoose = require('mongoose');
+const { createBrotliCompress } = require('zlib');
 var serv = require('http').Server(app);//refer to server when refering to certain connections
 var io = require('socket.io')(serv,{});
 var debug = true;//do not leave true when building on heroku, allows code injection
@@ -12,7 +13,7 @@ require('./models/Player');
 var PlayerData = mongoose.model('player');
 
 //File communication
-app.get('/', function(req,res){
+app.get('/', function(req,res){//this is the root page
     res.sendFile(__dirname+'/client/index.html');
 });//connection to index
 
@@ -216,16 +217,25 @@ var Players = {//dictionary(aka name value pair), is a json object
     "Jay":"ewq",
 }
 
-var isPasswordValid = function(data){
-    var test = PlayerData.findOne({username:data.username}, function(err, username){
-        console.log(username);
+var isPasswordValid = function(data, cb){
+    PlayerData.findOne({username:data.username}, function(err, username){
+        //console.log(username.password, data.password);
+        cb(data.password == username.password);//connection function's wait for response
     });
     
     
     //return Players[data.username] === data.password;//compare the data(the password) to the password entered
 }
-var isUsernameTaken = function(data){
-    return Players[data.username];//!
+var isUsernameTaken = function(data,cb){
+    PlayerData.findOne({username:data.username}, function(err, username){
+        if(username == null){
+            cb(false);
+        }
+        else{
+            cb(true);
+        }
+    });
+    //return Players[data.username];
 }
 var addUser = function(data){
     //Players[data.username] = data.password;
@@ -247,25 +257,46 @@ io.sockets.on('connection', function(socket){//when connected to socket.io, is o
 
     //signIn event
     socket.on('signIn', function(data){
+        //old connection code without the callback function
+        // if(isPasswordValid(data)){
+        //     Player.onConnect(socket);
+        //     //send the id to the client
+        //     socket.emit('connected', socket.id);
+        //     socket.emit('signInResponse', {success:true});
+        // }else{//not logged in sucessfully
+        //     socket.emit('signInResponse', {success:false});
+        // }
 
-        if(isPasswordValid(data)){
-            Player.onConnect(socket);
-            //send the id to the client
-            socket.emit('connected', socket.id);
-            socket.emit('signInResponse', {success:true});
-        }else{//not logged in sucessfully
-            socket.emit('signInResponse', {success:false});
-        }
+        isPasswordValid(data, function(res){
+            if(res) {
+                Player.onConnect(socket);
+                //send the id to the client
+                socket.emit('conneced', socket.id);
+                socket.emit('signInResponse', {success: true});
+            } else {
+                socket.emit('signInResponse', {success: false});
+            }
+        });
     });
 
     //signUp event
     socket.on('signUp', function(data){
-        if(isUsernameTaken(data)){
-            socket.emit('signUpResponse', {success:false});
-        }else{//add users to collection when signing up
-            addUser(data);
-            socket.emit('signUpResponse', {success:true});
-        }
+        // if(isUsernameTaken(data)){
+        //     socket.emit('signUpResponse', {success:false});
+        // }else{//add users to collection when signing up
+        //     addUser(data);
+        //     socket.emit('signUpResponse', {success:true});
+        // }
+
+        isUsernameTaken(data, function(res){
+            if(res){
+                socket.emit('signUpResponse', {success:false});
+            }else{
+                addUser(data);
+                socket.emit('signUpResponse',{success:true});
+            }
+        })
+
     });
 
     //disconnection event
