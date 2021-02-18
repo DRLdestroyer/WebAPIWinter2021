@@ -1,5 +1,4 @@
 var express = require('express');
-const { Mongoose } = require('mongoose');
 var app = express();
 var mongoose = require('mongoose');
 const { createBrotliCompress } = require('zlib');
@@ -38,9 +37,8 @@ var GameObject = function(){
     };
     
     self.update = function(){
-        self.updatePosition()
+        self.updatePosition();
     }
-
     self.updatePosition = function(){
         self.x += self.spX;
         self.y += self.spY;
@@ -64,6 +62,9 @@ var Player = function(id){//class, similar to constructor
     self.attack = false;
     self.mouseAngle = 0;
     self.speed = 10;
+    self.hp = 10;
+    self.hpMax = 10;
+    self.score = 0;
     
     var playerUpdate = self.update;//inherited from base class
 
@@ -79,7 +80,7 @@ var Player = function(id){//class, similar to constructor
     }
 
     self.shoot = function(angle){
-        var b =new Bullet(self.id, angle);
+        var b = new Bullet(self.id, angle);
         b.x = self.x;
         b.y = self.y;
     }
@@ -102,7 +103,32 @@ var Player = function(id){//class, similar to constructor
         }
     }
 
+    self.getInitPack = function(){
+        return{
+            id:self.id,
+            x:self.x,
+            y:self.y,
+            number:self.number,
+            hp:self.hp,
+            hpMax:self.hpMax,
+            score:self.score
+        }
+    };
+
+    self.getUpdatePack = function(){
+        return {
+            id:self.id,
+            x:self.x,
+            y:self.y,
+            number:self.number,
+            hp:self.hp,
+            score:self.score
+        }
+    }
+
     Player.list[id] = self;
+
+    initPack.player.push(self.getInitPack())
 
     return self;
 }
@@ -128,7 +154,21 @@ Player.onConnect = function(socket){
             player.attack = data.state;
         if(data.inputId === 'mouseAngle')
             player.mouseAngle = data.state;
+            
     });
+    socket.emit('init', {
+        player:Player.getAllInitPack(),
+        bullet:Bullet.getAllInitPack(),
+
+    })
+}
+
+Player.getAllInitPack = function(){
+    var players = []
+    for(var i in Player.list){
+        players.push(Player.list[i].getInitPack())
+    }
+    return players
 }
 
 Player.onDisconnect = function(socket){
@@ -140,13 +180,8 @@ Player.update = function(){
     for (var i in Player.list){
         var player = Player.list[i];
         player.update();
-        //console.log(player)
-        pack.push({
-            x: player.x,
-            y: player.y,
-            number: player.number,
-            id:player.id
-        })
+        //console.log(player);
+        pack.push(player.getUpdatePack());
     }
 
     return pack;
@@ -158,7 +193,6 @@ var Bullet = function(parent, angle){
     self.spX = Math.cos(angle/180*Math.PI) * 10;//convert from degrees to radians
     self.spY = Math.sin(angle/180*Math.PI) * 10;//convert from degrees to radians
     self.parent = parent;
-
 
     self.timer = 0;
     self.toRemove = false;
@@ -173,12 +207,45 @@ var Bullet = function(parent, angle){
         for(var i in Player.list){
             var p = Player.list[i];
             if(self.getDist(p)<25 && self.parent !== p.id){//25 distance range is hardcoded, prevent collision w/ self
+                p.hp -= 1;
+                
+                if(p.hp <= 0){
+                    var shooter = player.list[self.parent];//find owner
+
+                    if(shooter){
+                        shooter.score += 1;
+                    }
+                    //reset killed player :set random pos for killed player
+                    p.hp = p.hpMax //take player that got killed and take hp and reset it
+                    p.x = Math.random() * 800;
+                    p.y = Math.random() * 600;
+                }
+                
                 self.toRemove = true;
-                //damage/hp 
+                //look who the bullet collided with, add points to owner of bullet//damage/hp for health
             }
         }
     }
+
+    self.getInitPack = function(){
+        return {
+            id:self.id,
+            x:self.x,
+            y:self.y,
+        }
+    }
+
+    self.getUpdatePack = function(){
+        return {
+            id:self.id,
+            x:self.x,
+            y:self.y,
+        }
+    }
+
     Bullet.list[self.id] = self;
+
+    initPack.bullet.push(self.getInitPack())
     return self;
 }
 
@@ -207,6 +274,14 @@ Bullet.update = function(){
     }
 
     return pack;
+}
+
+Bullet.getAllInitPack = function(){
+    var bullets = []
+    for(var i in Bullet.list){
+        bullets.push(Bullet.list[i].getInitPack())
+    }
+    return bullets
 }
 
 //___User collection setup___
@@ -250,10 +325,10 @@ io.sockets.on('connection', function(socket){//when connected to socket.io, is o
     //socket.x = 0;
     //socket.y = Math.floor(Math.random()*600)//random number * canvas height
     //socket.number = Math.floor(Math.random()*10)//random number * canvas height
+
     //add something to socket list
     SocketList[socket.id] = socket;
-    
-    
+
 
     //signIn event
     socket.on('signIn', function(data){
@@ -333,6 +408,16 @@ io.sockets.on('connection', function(socket){//when connected to socket.io, is o
     // })
 });
 
+var initPack = {
+    player:[], 
+    bullet:[]
+}
+
+var removePack = {
+    player:[], 
+    bullet:[]
+}
+
 //setup update loop
 setInterval(function(){
     var pack = {
@@ -341,6 +426,12 @@ setInterval(function(){
     };
     for (var i in SocketList){
         var socket = SocketList[i];//new local refernce to update previous versions
-        socket.emit('newPositions', pack);
-    };
+        socket.emit('init', initPack)
+        socket.emit('update', pack)
+        socket.emit('remove', removePack)
+    }
+    initPack.player = [];
+    initPack.bullet = [];
+    removePack.player = [];
+    removePack.bullet = [];
 }, 1000/30);//code to be executed when run, time in ms
